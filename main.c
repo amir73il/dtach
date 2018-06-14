@@ -29,7 +29,7 @@ const char copyright[] = "dtach - version " PACKAGE_VERSION "(C)Copyright 2004-2
 /* argv[0] from the program */
 char *progname;
 /* The name of the passed in socket. */
-char *sockname;
+char *sockname, *logname;
 /* The character used for detaching. Defaults to '^\' */
 int detach_char = '\\' - 64;
 /* 1 if we should not interpret the suspend character. */
@@ -87,6 +87,7 @@ int
 main(int argc, char **argv)
 {
 	int mode = 0;
+	int len;
 
 	/* Save the program name */
 	progname = argv[0];
@@ -134,6 +135,12 @@ main(int argc, char **argv)
 	}
 	sockname = *argv;
 	++argv; --argc;
+
+	len = strlen(sockname);
+	if (len > 4 && !strcmp(sockname + len - 4, ".log")) {
+		logname = strdup(sockname);
+		sockname[len - 4] = 0;
+	}
 
 	if (mode == 'p')
 	{

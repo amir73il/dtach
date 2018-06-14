@@ -52,6 +52,7 @@ struct client
 static struct client *clients;
 /* The pseudo-terminal created for the child process. */
 static struct pty the_pty;
+static int log_fd;
 
 #ifndef HAVE_FORKPTY
 pid_t forkpty(int *amaster, char *name, struct termios *termp,
@@ -238,12 +239,51 @@ update_socket_modes(int exec)
 		chmod(sockname, newmode);
 }
 
+static ssize_t write_socket(int fd, char *buf, ssize_t len)
+{
+	ssize_t written = 0;
+
+	while (written < len)
+	{
+		ssize_t n = write(fd, buf + written, len - written);
+
+		if (n > 0)
+		{
+			written += n;
+			continue;
+		}
+		else if (n < 0)
+			return n;
+		break;
+	}
+	return written;
+}
+
+static void write_log(char *buf, ssize_t len)
+{
+	if (!logname)
+		return;
+
+	if (!log_fd) {
+		log_fd = open(logname, O_CREAT|O_APPEND|O_WRONLY, 0644);
+		if (log_fd < 0) {
+			free(logname);
+			logname = NULL;
+		}
+		write_socket(log_fd, "\n==== ", 6);
+		write_socket(log_fd, sockname, strlen(sockname));
+		write_socket(log_fd, " ====\n", 6);
+	}
+
+	write_socket(log_fd, buf, len);
+}
+
 /* Process activity on the pty - Input and terminal changes are sent out to
 ** the attached clients. If the pty goes away, we die. */
 static void
 pty_activity(int s)
 {
-	unsigned char buf[BUFSIZE];
+	char buf[BUFSIZE];
 	ssize_t len;
 	struct client *p;
 	fd_set readfds, writefds;
@@ -289,6 +329,9 @@ top:
 	if (select(highest_fd + 1, &readfds, &writefds, NULL, NULL) < 0)
 		return;
 
+	/* Write to log file - best effort */
+	write_log(buf, len);
+
 	/* Send the data out to the clients. */
 	for (p = clients, nclients = 0; p; p = p->next)
 	{
@@ -297,22 +340,11 @@ top:
 		if (!FD_ISSET(p->fd, &writefds))
 			continue;
 
-		written = 0;
-		while (written < len)
-		{
-			ssize_t n = write(p->fd, buf + written, len - written);
-
-			if (n > 0)
-			{
-				written += n;
-				continue;
-			}
-			else if (n < 0 && errno == EINTR)
-				continue;
-			else if (n < 0 && errno != EAGAIN)
-				nclients = -1;
-			break;
-		}
+		written = write_socket(p->fd, buf, len);
+		if (written < 0 && errno == EINTR)
+			continue;
+		else if (written < 0 && errno != EAGAIN)
+			nclients = -1;
 		if (nclients != -1 && written == len)
 			nclients++;
 	}

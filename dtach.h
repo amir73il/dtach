@@ -80,7 +80,7 @@
 #define S_ISSOCK(m) (((m) & S_IFMT) == S_IFSOCK)
 #endif
 
-extern char *progname, *sockname;
+extern char *progname, *sockname, *logname;
 extern int detach_char, no_suspend, redraw_method;
 extern struct termios orig_term;
 extern int dont_have_tty;
